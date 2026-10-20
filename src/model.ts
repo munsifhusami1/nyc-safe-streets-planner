@@ -1,5 +1,5 @@
 export type Site = {
-  site_id: number; name: string; borough: string; low_income: boolean; vz_priority: boolean;
+  site_id: number; name: string; borough: string; low_income: boolean; income_known: boolean; vz_priority: boolean;
   has_lpi: boolean; has_turn_calming: boolean; lon: number; lat: number;
   ped_inj: number; ped_sk: number; cyc_inj: number; cyc_sk: number; mot_inj: number; mot_sk: number; ped_turning: number;
 };
