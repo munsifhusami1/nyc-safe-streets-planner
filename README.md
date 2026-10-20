@@ -5,6 +5,26 @@ A guided planner for deciding which New York City intersections to fix first so 
 **Hosted app** (CARTO login required, shared with the organization):
 https://workspace-gcp-us-east1.app.carto.com/app/safe-streets-munsif/
 
+## Key findings
+
+Default run: $3M budget, 200 crew-days, at least 40% of spend in low-income areas, serious injury or death weighted 10x. Impacts are estimates from the assumptions below, not measured outcomes.
+
+| | Optimizer | Fix worst first |
+|---|---|---|
+| Intersections fixed | 144 | 5 |
+| Spend | $2.42M | $3.00M |
+| Crew-days used (of 200) | 200 | 125 |
+| Harm points avoided per year | 132 | 27.5 |
+| People spared per year | about 45 | about 15 |
+| Low-income share of spend | 46% | 100% |
+| Fixes chosen | 116 leading pedestrian intervals, 28 daylighting | 5 full redesigns |
+
+- **The optimizer spares about 3x as many people** with less money. Worst-first sends the whole budget to five $600k redesigns at the most notorious intersections. The optimizer favors cheap fixes (mostly leading pedestrian intervals) across many intersections. It never picked a full redesign or turn calming at these costs and effect sizes.
+- **Crew capacity limited the optimizer, not money.** It used all 200 crew-days but left about $580k unspent. With 400 crew-days it spends $2.995M on 247 fixes and spares about 59 people per year.
+- **The low-income rule was not binding.** The optimizer reached 46% low-income spend on its own, above the 40% minimum. Raising the minimum to 70% costs little: about 4% fewer harm points avoided (127 vs. 132), and slightly more people spared (about 47), because low-income areas have many cheap, effective fixes.
+- **Worst-first met the low-income rule by coincidence.** All five of its sites happen to be in low-income areas, so it shows 100%. That is not a result of design.
+- **Harm is concentrated.** Canarsie, Mott Haven-Port Morris, South Ozone Park and Jamaica have the most harm points per year, but the optimizer places only 1 to 4 fixes in each, because many cheap fixes elsewhere pay off more.
+
 ## Data
 
 CARTO Data Warehouse (`carto_dw`, BigQuery), read live with two fixed SQL queries (`src/queries.ts`):
@@ -12,6 +32,7 @@ CARTO Data Warehouse (`carto_dw`, BigQuery), read live with two fixed SQL querie
 - `cartobq.docs.nyc_safety_sites`: intersections, with low-income, leading pedestrian interval (LPI) and turn-calming flags.
 - `cartobq.docs.nyc_safety_site_year`: injuries by year, mode and severity per intersection.
 - `cartobq.docs.nyc_safety_people_hurt`: every person hurt, used for the "who we protect" step.
+- `cartobq.docs.nyc_signal_nta`: neighborhood (NTA) boundaries, used to group intersections for the neighborhood chart.
 
 Harm is measured over 2021-2025. Each intersection scores harm points per year: 1 per injury and 10 per serious injury or death (adjustable). Highway sites are excluded because these street fixes do not apply to them.
 
@@ -19,27 +40,40 @@ Harm is measured over 2021-2025. Each intersection scores harm points per year: 
 
 A multiple-choice knapsack solved with HiGHS (WebAssembly, in a web worker): at most one fix per intersection, maximizing harm points avoided, subject to budget, crew-day capacity and a minimum share of spend in low-income areas (`src/lp.ts`). To keep the solve fast it considers the roughly 9,800 highest-value site-and-fix options out of about 59,000.
 
-Result with the defaults ($3M budget, 200 crew-days, at least 40% of spend in low-income areas):
-
-| | Optimizer | Fix worst first |
-|---|---|---|
-| Intersections fixed | 144 | 5 |
-| Spend | $2.42M | $3.0M |
-| People spared per year | about 45 | about 15 |
-| Low-income share of spend | 46% | 100% |
-
-Worst-first puts a $600k redesign on each of a few notorious intersections. The optimizer buys many cheaper fixes where they pay off most. Crew-days, not budget, was the binding limit.
+Results with the default settings are under Key findings.
 
 ## Assumptions
 
-- **Fix effects, costs and crew-days are planning-grade estimates** based on published before/after studies (NYC DOT, FHWA). They are editable in the app. Replace them with local engineering estimates before committing funds.
-  - Leading pedestrian interval: $10k, 1 crew-day, -13% pedestrian harm.
-  - Daylighting and curb extension: $45k, 3 crew-days, -20% pedestrian and -10% cyclist harm.
-  - Turn calming: $70k, 4 crew-days, -30% harm from turning vehicles hitting pedestrians.
-  - Protected intersection redesign: $600k, 25 crew-days, -35% pedestrian, -35% cyclist, -15% motorist harm.
-- Past crashes are assumed to repeat at the same rate.
-- A site gets at most one fix. Sites that already have an LPI or turn calming cannot get it again.
-- "Low-income" uses the flag in the sites table.
+**Fix effects, costs and crew-days are my planning-grade estimates, not official figures.** They are based on published before/after studies (NYC DOT Vision Zero, FHWA) and are editable in the app. Replace them with local engineering estimates before committing funds.
+
+| Fix | Cost | Crew-days | Assumed effect |
+|---|---|---|---|
+| Leading pedestrian interval (LPI) | $10k | 1 | -13% pedestrian harm |
+| Daylighting + curb extension | $45k | 3 | -20% pedestrian, -10% cyclist harm |
+| Turn calming | $70k | 4 | -30% harm from turning vehicles hitting pedestrians |
+| Protected intersection redesign | $600k | 25 | -35% pedestrian, -35% cyclist, -15% motorist harm |
+
+Other assumptions:
+- **Harm score:** 2021-2025 crashes, 1 point per injury and 10 per serious injury or death (adjustable). Averaged per year.
+- **Past repeats:** crashes are assumed to continue at the 2021-2025 rate. Effects are applied as simple percentage reductions with no interaction between fixes.
+- **One fix per site.** Sites that already have an LPI or turn calming cannot get it again.
+- **Highways excluded:** these street-level fixes do not apply to them.
+- **Low-income** uses the flag in the sites table. The rule is a minimum share of dollars spent, not of sites.
+- **Crew-days** are a single pooled capacity. Crew type, location and scheduling are not modeled.
+- **Neighborhoods** come from the NTA boundaries in `nyc_signal_nta`. A few intersections fall outside every boundary and are left out of the neighborhood chart.
+- **Optimizer shortcut:** it considers about 9,800 of the roughly 59,000 possible site-and-fix options (the highest-value ones overall plus the top low-income ones). The solve is within 0.2% of optimal for that set.
+
+## Data snapshot (`data/`)
+
+A frozen copy of every result the app queries from CARTO, exported on 2026-10-20, so the app can be rebuilt later without CARTO. The app does not read these files yet. Each CSV has exactly the columns the query returns (booleans as `true`/`false`).
+
+| File | Rows | App query (`src/queries.ts`) | Source tables |
+|---|---|---|---|
+| `data/sites_by_intersection.csv` | 26,067 | `SITES_SQL`: one row per non-highway intersection with harm in 2021-2025: location, flags, and injury counts by mode (`ped`, `cyc`, `mot`) split into injured and serious-or-killed (`_sk`), plus `ped_turning` | `nyc_safety_sites`, `nyc_safety_site_year` |
+| `data/people_hurt_by_year_mode.csv` | 237 | `PEOPLE_SQL`: people hurt counted by year, mode, severity and whether a vehicle was turning | `nyc_safety_people_hurt` |
+| `data/site_neighborhood.csv` | 35,607 | `NTA_SQL`: neighborhood (`nta`, `nta_name`) of each non-highway intersection, by spatial join | `nyc_safety_sites`, `nyc_signal_nta` |
+
+To go CARTO-free, load these in place of the `query()` calls in `index.ts` (same column names), for example by importing them as static files. All source tables are in `cartobq.docs`.
 
 ## Run locally
 

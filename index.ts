@@ -3,7 +3,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import { BASEMAP } from '@deck.gl/carto';
 import { query } from '@carto/api-client';
 import maplibregl from 'maplibre-gl';
-import { PEOPLE_SQL, SITES_SQL } from './src/queries';
+import { NTA_SQL, PEOPLE_SQL, SITES_SQL } from './src/queries';
 import {
   DEFAULT_PARAMS, DEFAULT_TREATMENTS, Option, Params, Plan, Site, Treatment, YEARS,
   buildOptions, candidates, fmt$, fmtN, greedyPlan, siteHarm, summarize,
@@ -20,6 +20,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;
 type PeopleRow = { year: number; mode: string; severity: string; turning: boolean; n: number };
 let sites: Site[] = [];
 let people: PeopleRow[] = [];
+let ntaOf = new Map<number, { nta: string; name: string }>();
+let ntaRows = 12;
 let treatments: Treatment[] = structuredClone(DEFAULT_TREATMENTS);
 let params: Params = { ...DEFAULT_PARAMS };
 let step = 0;
@@ -101,6 +103,23 @@ function flyTo(s: Site) {
 const topSites = (n: number) => [...sites].sort((a, b) => siteHarm(b, params.skWeight) - siteHarm(a, params.skWeight)).slice(0, n);
 const bar = (parts: { v: number; c: string }[]) => { const t = parts.reduce((a, p) => a + p.v, 0) || 1; return `<div class="bar">${parts.map(p => `<span style="width:${(100 * p.v / t).toFixed(2)}%;background:${p.c}"></span>`).join('')}</div>`; };
 
+
+// ---------- neighborhoods (NTA) ----------
+function ntaChart() {
+  const m = new Map<string, { name: string; harm: number; fixes: number; avoided: number; cost: number }>();
+  for (const s of sites) {
+    const n = ntaOf.get(s.site_id); if (!n) continue;
+    const e = m.get(n.nta) ?? { name: n.name, harm: 0, fixes: 0, avoided: 0, cost: 0 }; e.harm += siteHarm(s, params.skWeight); m.set(n.nta, e);
+  }
+  for (const o of optimal?.picks ?? []) { const e = m.get(ntaOf.get(o.site.site_id)?.nta ?? ''); if (e) { e.fixes++; e.avoided += o.benefit; e.cost += o.cost; } }
+  const rows = [...m.values()].sort((a, b) => b.harm - a.harm), shown = rows.slice(0, ntaRows), mx = Math.max(...shown.map(r => r.harm), 1);
+  return `<div class="card"><b>By neighborhood</b> <span class="small">top ${shown.length} of ${rows.length} by harm</span>
+  <div class="small" style="margin:4px 0 8px"><span class="sw2" style="background:#D73027"></span>Harm points / yr${optimal ? ` &nbsp;<span class="sw2" style="background:#E8743B"></span>Avoided by optimizer` : ''}</div>
+  ${shown.map(r => `<div class="nta" title="${esc(r.name)}: ${fmtN(r.harm, 1)} harm pts/yr${optimal ? `, ${r.fixes} fixes, ${fmtN(r.avoided, 1)} avoided, ${fmt$(r.cost)}` : ''}"><div class="row"><span class="nm">${esc(r.name)}</span><span class="small">${fmtN(r.harm, 0)}${optimal ? ` · ${r.fixes} fix${r.fixes === 1 ? '' : 'es'}` : ''}</span></div>
+  <div class="ntabar" style="width:${(100 * r.harm / mx).toFixed(1)}%"><span style="width:${r.harm ? (100 * Math.min(1, r.avoided / r.harm)).toFixed(1) : 0}%"></span></div></div>`).join('')}
+  ${rows.length > 12 ? `<button class="ghost" id="nta-more" style="margin-top:8px;padding:4px 10px">${ntaRows > 12 ? 'Show fewer' : 'Show top 30'}</button>` : ''}</div>`;
+}
+
 // ---------- steps ----------
 function stepWho() {
   const yrs = people.filter(r => r.year >= 2012 && r.year <= 2025);
@@ -128,7 +147,8 @@ function stepWhere() {
   <p class="lede">Each intersection scores <b>harm points per year</b> (2021–2025): 1 per injury and ${w} per serious injury or death. Highways are left out because these street fixes don't apply.</p>
   <div class="kpis"><div class="kpi"><div class="v">${fmtN(arr.length)}</div><div class="l">intersections with harm</div></div><div class="kpi"><div class="v">${(100 * share10).toFixed(0)}%</div><div class="l">of harm in worst 10%</div></div><div class="kpi"><div class="v">${(100 * arr.filter(s => s.low_income).length / arr.length).toFixed(0)}%</div><div class="l">in low-income areas</div></div></div>
   <b>Ten most dangerous</b> <span class="small">(click to zoom)</span>
-  <ul class="top">${arr.slice(0, 10).map((s, i) => `<li data-id="${s.site_id}"><span class="n">${i + 1}</span><span class="t"><b>${esc(s.name)}</b><span class="small">${s.borough} · ${fmtN(siteHarm(s, w), 1)} pts/yr · ${fmtN((s.ped_inj + s.ped_sk) / YEARS, 1)} ped/yr</span></span>${s.low_income ? '<span class="chip">low income</span>' : ''}${s.has_lpi ? '<span class="chip g">has LPI</span>' : ''}</li>`).join('')}</ul>`;
+  <ul class="top">${arr.slice(0, 10).map((s, i) => `<li data-id="${s.site_id}"><span class="n">${i + 1}</span><span class="t"><b>${esc(s.name)}</b><span class="small">${s.borough} · ${fmtN(siteHarm(s, w), 1)} pts/yr · ${fmtN((s.ped_inj + s.ped_sk) / YEARS, 1)} ped/yr</span></span>${s.low_income ? '<span class="chip">low income</span>' : ''}${s.has_lpi ? '<span class="chip g">has LPI</span>' : ''}</li>`).join('')}</ul>
+  ${ntaChart()}`;
 }
 
 function stepFixes() {
@@ -157,7 +177,7 @@ function stepOptimize() {
   return `<h2>5 · Let the optimizer pick</h2>
   <p class="lede">An integer program (HiGHS, running in your browser) chooses at most one fix per intersection to maximize harm avoided under your rules.</p>
   <button class="primary" id="run" ${solving ? 'disabled' : ''}>${solving ? '<span class="spin"></span>Solving…' : optimal ? 'Re-run optimizer' : 'Run optimizer'}</button>
-  ${optimal ? planCard(optimal, 'Optimized plan') + mixCard(optimal) : ''}`;
+  ${optimal ? planCard(optimal, 'Optimized plan') + mixCard(optimal) + ntaChart() : ''}`;
 }
 
 const mixCard = (p: Plan) => {
@@ -188,6 +208,7 @@ function stepCompare() {
   ${row('People spared / yr', fmtN(o.people, 0), fmtN(n.people, 0))}</table></div>
   <div class="note"><b>${d(o.people, n.people)}</b> more people spared per year${sh(n) + 1e-9 < params.minLow ? ', and worst-first breaks the low-income rule' : ''}. Worst-first spends big on a few notorious intersections; the optimizer buys more cheap, high-return fixes across the city.</div>
   <div class="small">Map: <span style="color:var(--opt)">●</span> optimizer only · <span style="color:var(--naive)">●</span> worst-first only · <span style="color:var(--both)">●</span> both. Estimates assume the effect rates in step 3 and past crashes repeating.</div>
+  ${ntaChart()}
   <div class="btns"><a class="btn" id="dl-csv">Download plan (CSV)</a><a class="btn alt" id="dl-geo">GeoJSON</a><a class="btn alt" id="dl-naive">Worst-first (CSV)</a></div>`;
 }
 
@@ -235,6 +256,7 @@ function render() {
   bind('crew', v => params.crew = v, v => `${v} crew-days`);
   bind('minLow', v => params.minLow = v / 100, v => `${v}%`);
   bind('sk', v => params.skWeight = v, v => `${v}×`);
+  document.getElementById('nta-more')?.addEventListener('click', () => { ntaRows = ntaRows > 12 ? 12 : 30; render(); });
   document.getElementById('run')?.addEventListener('click', runOptimizer);
   if (step === 5 && optimal && naive) { link('dl-csv', csvRows(optimal), 'nyc_safety_optimized_plan.csv', 'text/csv'); link('dl-geo', geo(optimal), 'nyc_safety_optimized_plan.geojson', 'application/geo+json'); link('dl-naive', csvRows(naive), 'nyc_safety_worst_first_plan.csv', 'text/csv'); }
   $('steps').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => go(+b.dataset.s!));
@@ -248,10 +270,12 @@ $('next').onclick = () => go(step + 1);
 render();
 (async () => {
   try {
-    const [s, p] = await Promise.all([
+    const [s, p, n] = await Promise.all([
       query({ ...cfg, sqlQuery: SITES_SQL }),
       query({ ...cfg, sqlQuery: PEOPLE_SQL }),
+      query({ ...cfg, sqlQuery: NTA_SQL }),
     ]);
+    ntaOf = new Map((n.rows as any[]).map(r => [Number(r.site_id), { nta: String(r.nta), name: String(r.nta_name) }]));
     const num = (v: unknown) => Number(v) || 0;
     sites = (s.rows as any[]).map(r => ({ ...r, site_id: num(r.site_id), lon: num(r.lon), lat: num(r.lat), ped_inj: num(r.ped_inj), ped_sk: num(r.ped_sk), cyc_inj: num(r.cyc_inj), cyc_sk: num(r.cyc_sk), mot_inj: num(r.mot_inj), mot_sk: num(r.mot_sk), ped_turning: num(r.ped_turning) }));
     people = (p.rows as any[]).map(r => ({ year: num(r.year), mode: r.mode, severity: r.severity, turning: r.turning === true || r.turning === 'true', n: num(r.n) }));

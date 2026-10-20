@@ -58,3 +58,7 @@ input[type=range] { width:100%; accent-color:var(--primary); }
 #tooltip { position:absolute; pointer-events:none; background:#2C3032; color:#fff; padding:6px 10px; border-radius:6px; font-size:12px; z-index:3; display:none; max-width:260px; }
 .loading { padding:40px 0; text-align:center; color:var(--muted); }
 @media (max-width:760px){ #panel { width:calc(100vw - 24px); top:auto; height:62vh; } #legend { display:none; } }
+.sw2 { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:-1px; margin-right:4px; }
+.nta { margin:5px 0; } .nta .nm { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12.5px; }
+.ntabar { height:8px; background:#D73027; border-radius:4px; overflow:hidden; margin-top:2px; min-width:3px; }
+.ntabar span { display:block; height:100%; background:#E8743B; }
