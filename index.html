@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NYC Safety Planner</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="map"></div>
+      <canvas id="deck-canvas"></canvas>
+      <aside id="panel">
+        <header>
+          <div class="eyebrow">Vision Zero planning</div>
+          <h1>Which intersections do we fix first?</h1>
+          <nav id="steps"></nav>
+        </header>
+        <section id="content"></section>
+        <footer id="nav"><button id="back" class="ghost">Back</button><button id="next" class="primary">Next</button></footer>
+      </aside>
+      <div id="legend"></div>
+      <div id="tooltip"></div>
+    </div>
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>

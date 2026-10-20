@@ -1,0 +1,16 @@
+{
+  "name": "nyc-safety-planner",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "tsc --noEmit && vite build", "preview": "vite preview" },
+  "dependencies": {
+    "@carto/api-client": "^0.5.24",
+    "@deck.gl/carto": "^9.2.2",
+    "@deck.gl/core": "^9.2.2",
+    "@deck.gl/layers": "^9.2.2",
+    "highs": "^1.8.0",
+    "maplibre-gl": "^5.12.0"
+  },
+  "devDependencies": { "typescript": "~5.8.3", "vite": "^6.0.0" }
+}
